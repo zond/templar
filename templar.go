@@ -15,6 +15,34 @@ import (
 var templates = map[string]*template.Template{}
 var blobs = map[string][]byte{}
 
+func GetMatchingBlobNames(diskSearch bool, reg string) (result []string, err error) {
+	pat, err := regexp.Compile(reg)
+	if err != nil {
+		return
+	}
+	for k, _ := range blobs {
+		if pat.MatchString(k) {
+			result = append(result, k)
+		}
+	}
+	if len(result) > 0 {
+		return
+	}
+	if diskSearch {
+		var allChildren []string
+		allChildren, err = children(".")
+		if err != nil {
+			return
+		}
+		for _, child := range allChildren {
+			if pat.MatchString(child) {
+				result = append(result, child)
+			}
+		}
+	}
+	return
+}
+
 func children(dir string) (result []string, err error) {
 	dirFile, err := os.Open(dir)
 	if err != nil {
