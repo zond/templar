@@ -66,7 +66,7 @@ func GetMatching(diskSearch bool, baseName string, reg string) (result *template
 			}
 		}
 	}
-	if len(result.Templates()) > 0 {
+	if len(result.Templates()) > 1 {
 		return
 	}
 	if diskSearch {
