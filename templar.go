@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -11,7 +12,8 @@ import (
 	"text/template"
 )
 
-var templars = map[string]*template.Template{}
+var templates = map[string]*template.Template{}
+var blobs = map[string][]byte{}
 
 func children(dir string) (result []string, err error) {
 	dirFile, err := os.Open(dir)
@@ -40,16 +42,20 @@ func children(dir string) (result []string, err error) {
 	return
 }
 
-func Add(name, text string) (err error) {
+func AddBlob(name string, text string) {
+	blobs[name] = []byte(text)
+}
+
+func AddTemplate(name, text string) (err error) {
 	tmpl := template.New(name)
 	if tmpl, err = tmpl.Parse(text); err != nil {
 		return
 	}
-	templars[name] = tmpl
+	templates[name] = tmpl
 	return
 }
 
-func GetMatching(diskSearch bool, baseName string, reg string) (result *template.Template, err error) {
+func GetMatchingTemplates(diskSearch bool, baseName string, reg string) (result *template.Template, err error) {
 	pat, err := regexp.Compile(reg)
 	if err != nil {
 		return
@@ -58,7 +64,7 @@ func GetMatching(diskSearch bool, baseName string, reg string) (result *template
 	if _, err = result.Parse(""); err != nil {
 		return
 	}
-	for name, templar := range templars {
+	for name, templar := range templates {
 		if pat.MatchString(name) {
 			if _, err = result.AddParseTree(filepath.Base(name), templar.Tree); err != nil {
 				err = fmt.Errorf("Error adding %#v to result: %v", filepath.Base(name), err)
@@ -88,8 +94,8 @@ func GetMatching(diskSearch bool, baseName string, reg string) (result *template
 	return
 }
 
-func Get(diskSearch bool, name string) (result *template.Template, err error) {
-	result, found := templars[name]
+func GetTemplate(diskSearch bool, name string) (result *template.Template, err error) {
+	result, found := templates[name]
 	if found {
 		return
 	}
@@ -99,7 +105,25 @@ func Get(diskSearch bool, name string) (result *template.Template, err error) {
 	return
 }
 
-func Generate(dir, dst string) (err error) {
+func GetBlob(diskSearch bool, name string) (result io.ReadCloser, err error) {
+	b, found := blobs[name]
+	if found {
+		result = ioutil.NopCloser(bytes.NewBuffer(b))
+		return
+	}
+	result, err = os.Open(name)
+	return
+}
+
+func GenerateTemplates(dir, dst string) (err error) {
+	return generate("if err := templar.AddTemplate(%#v, %#v); err != nil { panic(err) }", dir, dst)
+}
+
+func GenerateBlobs(dir, dst string) (err error) {
+	return generate("templar.AddBlob(%#v, %#v)", dir, dst)
+}
+
+func generate(addTemplate, dir, dst string) (err error) {
 	dst, err = filepath.Abs(dst)
 	if err != nil {
 		return
@@ -136,10 +160,7 @@ func init() {
 		if err != nil {
 			return
 		}
-		if _, err = fmt.Fprintf(dstFile, `  if err := templar.Add(%#v, %#v); err != nil {
-    panic(err)
-  }
-`, template[len(filepath.Dir(dir))+1:], buf.String()); err != nil {
+		if _, err = fmt.Fprintf(dstFile, "  "+addTemplate+"\n", template[len(filepath.Dir(dir))+1:], buf.String()); err != nil {
 			return
 		}
 	}
